@@ -139,6 +139,76 @@ class Vacancy:
     def __gt__(self, other):
         return self.salary > other.salary
 
+class SuperJobAPI(VacancyAPI):
+    def __init__(self):
+        self.headers = {'X-Api-App-Id': "v3.r.137674025.51859777baedf0c51bb914faf2236064e1631ddf.8cbbf9e53aeae54dd765375af83b67e502305f21"}
+        self.vacancies_list = "Вызовите метод search для получения списка вакансий"
+
+    def get_json_from_superjob(self, request):
+        """request json from site"""
+        try:
+            auth_data = self.headers
+            response = requests.get('https://api.superjob.ru/2.0/%s' % request, headers=auth_data)
+            self.vacancies_list = response.json()['objects']
+            return response.json()['objects']
+        except ConnectionError:
+            print('Connection error!')
+        except requests.HTTPError:
+            print('HTTP error')
+        except TimeoutError:
+            print('Timeout error')
+        return {}
+
+    def prepare_exp(self, experience:int):
+        """make number from experience"""
+        res = 0
+        ex = { 0:1,1:2,3:3,6:4}
+        for i in ex.keys():
+            if experience > i:
+                res = ex[i]
+        return res
+
+
+    def search(self, skills_s, n_vacancies=None, experience=None):
+        """search vacancions on sj"""
+        result = 'vacancies/?'
+        params = {}
+        if experience:
+            params['experience'] = self.prepare_exp(experience)
+        if n_vacancies:
+            params["count"] = int(n_vacancies)
+        params['keywords'] = [i.strip().replace(",","") for i in skills_s.split()]
+
+        for key in params.keys():
+            if key == 'keywords':
+                for num_of_keyword, keyword in enumerate(params[key]):
+                    result += '%s[%d][%s]&' % (key, num_of_keyword, keyword)
+            else:
+                result += '%s=%s&' % (key, params[key])
+        return self.get_json_from_superjob(result[:-1])
+
+    def parse_info(self, sj_vac_info_dict):
+        name = sj_vac_info_dict["profession"]
+        link = sj_vac_info_dict["link"]
+        requirement = sj_vac_info_dict["candidat"]
+        description = sj_vac_info_dict["vacancyRichText"]
+        salary = sj_vac_info_dict.get("payment_from")
+        return name,link,requirement,description,salary
+
+    def get_parsed_vacancies(self, skills_s, n_vacancies=None, experience=None):
+        return [self.parse_info(i) for i in self.search(skills_s, n_vacancies=n_vacancies, experience=experience)]
+
+    def __getitem__(self, key):
+        if type(self.vacancies_list) != str:
+            return json.dumps(self.vacancies_list[key], indent=4, ensure_ascii=False)
+        else:
+            return self.vacancies_list
+
+    def __str__(self):
+        if type(self.vacancies_list) != str:
+            return json.dumps(self.vacancies_list, indent=4, ensure_ascii=False)
+        else:
+            return self.vacancies_list
 
 
 
@@ -150,16 +220,16 @@ def user_interaction():
     filter_words = input("Введите ключевые слова для фильтрации вакансий: ")
     exp =  int(input("Введите ваш опыт работы для фильтрации вакансий: "))
 
-    # a = SuperJobAPI()
+    a = SuperJobAPI()
     b = HeadHunterAPI()
     for i in b.get_parsed_vacancies(search_query + filter_words, n_vacancies=top_n, experience=exp):
         new_v = Vacancy(*i)
         print(new_v)
         SaverJSON.save_to_file(new_v.to_dict(), "new_file.json")
-    # for i in a.get_parsed_vacancies(search_query + filter_words, n_vacancies=top_n, experience=exp):
-    #     new_v = Vacancy(*i)
-    #     print(new_v)
-    #     SaverJSON.save_to_file(new_v.to_dict(), "new_file.json")
+    for i in a.get_parsed_vacancies(search_query + filter_words, n_vacancies=top_n, experience=exp):
+        new_v = Vacancy(*i)
+        print(new_v)
+        SaverJSON.save_to_file(new_v.to_dict(), "new_file.json")
 
 
 if __name__ == "__main__":
